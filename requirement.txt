@@ -1,0 +1,7 @@
+Flask>=2.3.3
+yt-dlp[default]>=2025.5.22
+pytube>=11.0.1
+pytube2>=15.0.16
+git+https://github.com/pytube/pytube.git
+requests>=2.31.0
+ffmpeg-python>=0.2.0
