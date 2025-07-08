@@ -5,5 +5,5 @@ pytube2>=15.0.16
 git+https://github.com/pytube/pytube.git
 requests>=2.31.0
 ffmpeg-python>=0.2.
-gunicorn>=23.0.0
+gunicorn
 
