@@ -10,12 +10,15 @@ from concurrent.futures import ThreadPoolExecutor
 app = Flask(__name__)
 executor = ThreadPoolExecutor(max_workers=10)
 
+COOKIES_FILE = 'cookies.txt'  # Ensure this file exists in your project directory
+
 YTDL_OPTS_BASE = {
     'quiet': True,
     'no_warnings': True,
     'skip_download': True,
     'restrictfilenames': True,
-    'format': 'bestvideo*+bestaudio/best'
+    'format': 'bestvideo*+bestaudio/best',
+    'cookies': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None
 }
 
 def is_valid_youtube_url(url):
@@ -35,7 +38,8 @@ def get_formats():
         return jsonify({'error': 'Invalid or missing YouTube URL'}), 400
 
     try:
-        with yt_dlp.YoutubeDL(YTDL_OPTS_BASE) as ydl:
+        ydl_opts = YTDL_OPTS_BASE.copy()
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
         formats = []
@@ -54,7 +58,7 @@ def get_formats():
 
             size_bytes = f.get('filesize') or f.get('filesize_approx')
             if not size_bytes:
-                continue  # skip formats with unknown size
+                continue
 
             size_mb = f"{size_bytes / (1024 * 1024):.1f} MB"
 
@@ -78,7 +82,6 @@ def get_formats():
                 'label': label,
             })
 
-        # Sort formats from highest to lowest quality based on numeric value in label (e.g., 1080p, 720p, etc.)
         formats.sort(key=lambda f: int(re.findall(r'\d+', f['label'])[0]) if re.findall(r'\d+', f['label']) else 0, reverse=True)
 
         return jsonify({'formats': formats})
@@ -87,7 +90,7 @@ def get_formats():
         error_message = str(e)
         if "Sign in to confirm you're not a bot" in error_message:
             return jsonify({
-                'error': 'This video requires sign-in. Try a public video or use authentication cookies.'
+                'error': 'This video requires sign-in. Please export and provide cookies.txt to authenticate.'
             }), 403
         return jsonify({'error': f'Failed to retrieve formats: {error_message}'}), 500
 
@@ -111,6 +114,7 @@ def download_video():
                 'no_warnings': True,
                 'restrictfilenames': True,
                 'merge_output_format': 'mp4',
+                'cookies': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -137,7 +141,7 @@ def download_video():
         error_message = str(e)
         if "Sign in to confirm you're not a bot" in error_message:
             return jsonify({
-                'error': 'This video requires login. Please try a different video or provide authentication cookies.'
+                'error': 'This video requires login. Please provide authentication cookies.'
             }), 403
         return jsonify({'error': f'Error downloading video: {error_message}'}), 500
 
