@@ -16,7 +16,8 @@ YTDL_OPTS_BASE = {
     'skip_download': True,
     'restrictfilenames': True,
     'format': 'bestvideo*+bestaudio/best',
-    'cookiesfrombrowser': ('chrome',)  # Automatically extract cookies from Chrome
+    'cookiesfrombrowser': ('chrome',) , # Automatically extract cookies from Chrome
+    'cookies': 'cookies.txt' 
 }
 
 def is_valid_youtube_url(url):
