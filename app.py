@@ -15,9 +15,7 @@ YTDL_OPTS_BASE = {
     'no_warnings': True,
     'skip_download': True,
     'restrictfilenames': True,
-    'format': 'bestvideo*+bestaudio/best',
-    'cookiesfrombrowser': ('chrome',) , # Automatically extract cookies from Chrome
-    'cookies': 'cookies.txt' 
+    'format': 'bestvideo*+bestaudio/best'
 }
 
 def is_valid_youtube_url(url):
@@ -37,8 +35,7 @@ def get_formats():
         return jsonify({'error': 'Invalid or missing YouTube URL'}), 400
 
     try:
-        ydl_opts = YTDL_OPTS_BASE.copy()
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(YTDL_OPTS_BASE) as ydl:
             info = ydl.extract_info(url, download=False)
 
         formats = []
@@ -57,7 +54,7 @@ def get_formats():
 
             size_bytes = f.get('filesize') or f.get('filesize_approx')
             if not size_bytes:
-                continue
+                continue  # skip formats with unknown size
 
             size_mb = f"{size_bytes / (1024 * 1024):.1f} MB"
 
@@ -81,17 +78,13 @@ def get_formats():
                 'label': label,
             })
 
+        # Sort formats from highest to lowest quality based on numeric value in label (e.g., 1080p, 720p, etc.)
         formats.sort(key=lambda f: int(re.findall(r'\d+', f['label'])[0]) if re.findall(r'\d+', f['label']) else 0, reverse=True)
 
         return jsonify({'formats': formats})
 
     except Exception as e:
-        error_message = str(e)
-        if "Sign in to confirm you're not a bot" in error_message:
-            return jsonify({
-                'error': 'This video requires sign-in. Ensure you are logged into Chrome.'
-            }), 403
-        return jsonify({'error': f'Failed to retrieve formats: {error_message}'}), 500
+        return jsonify({'error': f'Failed to retrieve formats: {str(e)}'}), 500
 
 @app.route('/download', methods=['POST'])
 def download_video():
@@ -113,7 +106,6 @@ def download_video():
                 'no_warnings': True,
                 'restrictfilenames': True,
                 'merge_output_format': 'mp4',
-                'cookiesfrombrowser': ('chrome',)  # Automatically use Chrome cookies
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -137,12 +129,7 @@ def download_video():
         return jsonify({'download_url': f'/download_file/{video_id}'})
 
     except Exception as e:
-        error_message = str(e)
-        if "Sign in to confirm you're not a bot" in error_message:
-            return jsonify({
-                'error': 'This video requires login. Please make sure you are logged into YouTube in Chrome.'
-            }), 403
-        return jsonify({'error': f'Error downloading video: {error_message}'}), 500
+        return jsonify({'error': f'Error downloading video: {str(e)}'}), 500
 
 @app.route('/download_file/<video_id>')
 def download_file(video_id):
