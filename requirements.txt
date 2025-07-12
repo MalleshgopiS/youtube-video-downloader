@@ -1,5 +1,5 @@
-Flask>=2.3.3
-yt-dlp[default]>=2025.5.22
+Flask
+yt-dlp
 pytube>=11.0.1
 pytube2>=15.0.16
 git+https://github.com/pytube/pytube.git

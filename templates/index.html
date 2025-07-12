@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <title>YouTube Video Downloader</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
     <div class="container">
@@ -11,7 +12,7 @@
 
         <label for="url">YouTube URL:</label>
         <input type="text" id="url" placeholder="Enter YouTube URL" autocomplete="off" />
-        <button id="fetchBtn" onclick="fetchFormats()">Download</button>
+        <button id="fetchBtn" onclick="fetchFormats()">Fetch Formats</button>
 
         <div id="formats-container" style="display:none;">
             <select id="formats-select"></select>
@@ -33,7 +34,7 @@
         <ol>
             <li>Find the YouTube video you want to download and copy its URL.</li>
             <li>Paste the URL into the input box above.</li>
-            <li>Click "Download" to fetch available download options.</li>
+            <li>Click "Fetch Formats" to see available download options.</li>
             <li>Select your preferred format from the dropdown menu.</li>
             <li>Click "Download Selected Format" to start the download.</li>
         </ol>
@@ -41,9 +42,9 @@
         <h3>Supported Features</h3>
         <ul>
             <li>Download videos in multiple formats including MP4 and MP3.</li>
-            <li>Choose quality options from standard to Full HD (and sometimes 4K).</li>
+            <li>Choose quality options from standard to Full HD (and sometimes 4K, if available).</li>
             <li>Works on desktop and mobile devices.</li>
-            <li>Supports downloading YouTube Shorts and playlists.</li>
+            <li>Supports downloading YouTube Shorts.</li>
             <li>No installation or add-ons required.</li>
         </ul>
 
@@ -58,7 +59,7 @@
         const messageDiv = document.getElementById('message');
         const formatsContainer = document.getElementById('formats-container');
         const formatsSelect = document.getElementById('formats-select');
-        const downloadBtn = document.getElementById('fetchBtn');
+        const fetchBtn = document.getElementById('fetchBtn');
         const formatDownloadBtn = document.getElementById('formatDownloadBtn');
 
         function showSpinner() {
@@ -69,25 +70,42 @@
             spinner.style.display = 'none';
         }
 
+        function displayMessage(text, type = '') {
+            messageDiv.textContent = text;
+            messageDiv.className = ''; // Clear previous classes
+            if (type) {
+                messageDiv.classList.add(type);
+            }
+        }
+
         function isValidYouTubeURL(url) {
-            return /^(https?\:\/\/)?(www\.youtube\.com|youtu\.?be)\/.+$/.test(url);
+            // More robust client-side regex matching the backend
+            const pattern = /^(https?:\/\/)?(www\.)?(m\.)?(youtube\.com|youtu\.be)\/(watch\?v=|embed\/|v\/|shorts\/|ytscreeningroom\?v=|yt\.be\/|user\/\S+\/|channel\/\S+\/|\S+)([a-zA-Z0-9_-]{11})([&?#].*)?$/;
+            return pattern.test(url);
         }
 
         async function fetchFormats() {
             const url = document.getElementById('url').value.trim();
-            messageDiv.textContent = '';
+            displayMessage(''); // Clear previous messages
             formatsSelect.innerHTML = '';
             formatsContainer.style.display = 'none';
 
-            downloadBtn.disabled = true;
+            fetchBtn.disabled = true;
+            formatDownloadBtn.disabled = true; // Disable download button immediately
 
-            if (!url || !isValidYouTubeURL(url)) {
-                messageDiv.textContent = 'Please enter a valid YouTube URL.';
-                downloadBtn.disabled = false;
+            if (!url) {
+                displayMessage('Please enter a YouTube URL.', 'error');
+                fetchBtn.disabled = false;
                 return;
             }
 
-            messageDiv.textContent = 'Fetching formats...';
+            if (!isValidYouTubeURL(url)) {
+                displayMessage('Invalid YouTube URL. Please check the format and try again.', 'error');
+                fetchBtn.disabled = false;
+                return;
+            }
+
+            displayMessage('Fetching formats...', 'info');
             showSpinner();
 
             try {
@@ -99,12 +117,12 @@
                 const data = await response.json();
 
                 if (!response.ok) {
-                    messageDiv.textContent = data.error || 'Failed to fetch formats.';
+                    displayMessage(data.error || 'Failed to fetch formats.', 'error');
                     return;
                 }
 
                 if (!data.formats.length) {
-                    messageDiv.textContent = 'No downloadable formats found.';
+                    displayMessage('No downloadable formats found for this video.', 'info');
                     return;
                 }
 
@@ -116,12 +134,14 @@
                 });
 
                 formatsContainer.style.display = 'block';
-                messageDiv.textContent = 'Select a format and click download.';
+                displayMessage('Select a format and click "Download Selected Format".', 'success');
+                formatDownloadBtn.disabled = false; // Enable download button only if formats are found
+
             } catch (err) {
-                messageDiv.textContent = 'Error fetching formats: ' + err.message;
+                displayMessage('Error fetching formats: ' + err.message + '. Please try again.', 'error');
             } finally {
                 hideSpinner();
-                downloadBtn.disabled = false;
+                fetchBtn.disabled = false;
             }
         }
 
@@ -130,14 +150,16 @@
             const selectedFormat = formatsSelect.value;
 
             formatDownloadBtn.disabled = true;
+            fetchBtn.disabled = true; // Disable fetch button during download
 
             if (!selectedFormat) {
-                messageDiv.textContent = 'Please select a format.';
+                displayMessage('Please select a format before downloading.', 'error');
                 formatDownloadBtn.disabled = false;
+                fetchBtn.disabled = false;
                 return;
             }
 
-            messageDiv.textContent = 'Downloading...';
+            displayMessage('Preparing your download...', 'info');
             showSpinner();
 
             try {
@@ -150,23 +172,24 @@
                 const data = await response.json();
 
                 if (!response.ok) {
-                    messageDiv.textContent = data.error || 'Failed to download video.';
+                    displayMessage(data.error || 'Failed to download video.', 'error');
                     return;
                 }
 
                 const a = document.createElement('a');
                 a.href = data.download_url;
-                a.download = '';
+                a.download = ''; // Let the server decide the filename
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
 
-                messageDiv.textContent = 'Download started.';
+                displayMessage('Download started. Check your browser\'s downloads.', 'success');
             } catch (err) {
-                messageDiv.textContent = 'Error during download: ' + err.message;
+                displayMessage('An error occurred during download: ' + err.message + '. Please try again.', 'error');
             } finally {
                 hideSpinner();
                 formatDownloadBtn.disabled = false;
+                fetchBtn.disabled = false;
             }
         }
     </script>
@@ -174,7 +197,7 @@
 
 <footer class="footer">
     <div class="footer-container">
-        <p>© 2025 YouVi Downloader</p>
+        <p>&copy; 2025 YouVi Downloader</p>
         <div class="footer-links">
             <a href="#">Download YouTube to MP4</a>
             <a href="#">YouTube Shorts</a>
@@ -185,5 +208,4 @@
         </div>
     </div>
 </footer>
-
 </html>
