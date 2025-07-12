@@ -10,12 +10,14 @@ from concurrent.futures import ThreadPoolExecutor
 app = Flask(__name__)
 executor = ThreadPoolExecutor(max_workers=10)
 
+# Use cookies.txt for authentication
 YTDL_OPTS_BASE = {
     'quiet': True,
     'no_warnings': True,
     'skip_download': True,
     'restrictfilenames': True,
-    'format': 'bestvideo*+bestaudio/best'
+    'format': 'bestvideo*+bestaudio/best',
+    'cookies': 'cookies.txt'  # Make sure this file is present in your project root
 }
 
 def is_valid_youtube_url(url):
@@ -54,7 +56,7 @@ def get_formats():
 
             size_bytes = f.get('filesize') or f.get('filesize_approx')
             if not size_bytes:
-                continue  # skip formats with unknown size
+                continue
 
             size_mb = f"{size_bytes / (1024 * 1024):.1f} MB"
 
@@ -78,7 +80,6 @@ def get_formats():
                 'label': label,
             })
 
-        # Sort formats from highest to lowest quality based on numeric value in label (e.g., 1080p, 720p, etc.)
         formats.sort(key=lambda f: int(re.findall(r'\d+', f['label'])[0]) if re.findall(r'\d+', f['label']) else 0, reverse=True)
 
         return jsonify({'formats': formats})
@@ -106,6 +107,7 @@ def download_video():
                 'no_warnings': True,
                 'restrictfilenames': True,
                 'merge_output_format': 'mp4',
+                'cookies': 'cookies.txt'  # Use the same cookie file here
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
