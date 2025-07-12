@@ -10,10 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 app = Flask(__name__)
 executor = ThreadPoolExecutor(max_workers=10)
 
-YTDL_OPTS_BASE = {
+YTDL_BASE_OPTS = {
     'quiet': True,
     'no_warnings': True,
-    'skip_download': True,
     'restrictfilenames': True,
     'format': 'bestvideo*+bestaudio/best'
 }
@@ -26,110 +25,57 @@ def is_valid_youtube_url(url):
 def index():
     return render_template('index.html')
 
-@app.route('/formats', methods=['POST'])
-def get_formats():
+@app.route('/batch_download', methods=['POST'])
+def batch_download():
     data = request.get_json(silent=True)
-    url = data.get('url', '').strip()
+    urls = data.get('urls', [])
+    cookies_path = data.get('cookies_path', None)
 
-    if not is_valid_youtube_url(url):
-        return jsonify({'error': 'Invalid or missing YouTube URL'}), 400
+    if not urls or not isinstance(urls, list):
+        return jsonify({'error': 'Provide a list of YouTube URLs'}), 400
 
-    try:
-        with yt_dlp.YoutubeDL(YTDL_OPTS_BASE) as ydl:
-            info = ydl.extract_info(url, download=False)
+    valid_urls = [u for u in urls if is_valid_youtube_url(u)]
+    if not valid_urls:
+        return jsonify({'error': 'No valid YouTube URLs found'}), 400
 
-        formats = []
-        seen_labels = set()
+    results = []
 
-        for f in info.get('formats', []):
-            if not f.get('format_id'):
-                continue
-
-            ext = f.get('ext', 'mp4')
-            if ext == 'webm':
-                continue
-
-            vcodec = f.get('vcodec', 'none')
-            acodec = f.get('acodec', 'none')
-
-            size_bytes = f.get('filesize') or f.get('filesize_approx')
-            if not size_bytes:
-                continue  # skip formats with unknown size
-
-            size_mb = f"{size_bytes / (1024 * 1024):.1f} MB"
-
-            if vcodec != 'none' and acodec != 'none':
-                label = f"{f.get('height', 'unknown')}p (video + audio) - {size_mb}"
-            elif vcodec != 'none':
-                label = f"{f.get('height', 'unknown')}p - {size_mb}"
-            elif acodec != 'none':
-                label = f"{f.get('abr', 'unknown')}kbps (audio only) - {size_mb}"
-            else:
-                continue
-
-            label_key = (label, ext)
-            if label_key in seen_labels:
-                continue
-            seen_labels.add(label_key)
-
-            formats.append({
-                'format_id': f['format_id'],
-                'ext': ext,
-                'label': label,
-            })
-
-        # Sort formats from highest to lowest quality based on numeric value in label (e.g., 1080p, 720p, etc.)
-        formats.sort(key=lambda f: int(re.findall(r'\d+', f['label'])[0]) if re.findall(r'\d+', f['label']) else 0, reverse=True)
-
-        return jsonify({'formats': formats})
-
-    except Exception as e:
-        return jsonify({'error': f'Failed to retrieve formats: {str(e)}'}), 500
-
-@app.route('/download', methods=['POST'])
-def download_video():
-    data = request.get_json(silent=True)
-    url = data.get('url', '').strip()
-    format_id = data.get('format_id', '').strip()
-
-    if not is_valid_youtube_url(url):
-        return jsonify({'error': 'Invalid or missing YouTube URL'}), 400
-    if not format_id:
-        return jsonify({'error': 'Missing format_id'}), 400
-
-    def download_task(url, format_id):
+    def download_video(url):
         with tempfile.TemporaryDirectory() as temp_dir:
             ydl_opts = {
-                'format': f'{format_id}+bestaudio/best',
+                'format': 'bestvideo+bestaudio/best',
                 'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
                 'quiet': True,
                 'no_warnings': True,
                 'restrictfilenames': True,
-                'merge_output_format': 'mp4',
+                'merge_output_format': 'mp4'
             }
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                filename = ydl.prepare_filename(info)
+            if cookies_path:
+                ydl_opts['cookiefile'] = cookies_path
 
-            with open(filename, 'rb') as f:
-                buffer = BytesIO(f.read())
-                buffer.seek(0)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    filename = ydl.prepare_filename(info)
 
-            clean_filename = os.path.basename(filename)
-            video_id = str(uuid.uuid4())
-            return video_id, buffer, clean_filename
+                with open(filename, 'rb') as f:
+                    buffer = BytesIO(f.read())
+                    buffer.seek(0)
 
-    try:
-        future = executor.submit(download_task, url, format_id)
-        video_id, buffer, clean_filename = future.result()
+                clean_filename = os.path.basename(filename)
+                video_id = str(uuid.uuid4())
+                app.config.setdefault('videos', {})[video_id] = (buffer, clean_filename)
 
-        app.config.setdefault('videos', {})[video_id] = (buffer, clean_filename)
+                return {'url': url, 'status': 'success', 'download_url': f'/download_file/{video_id}'}
 
-        return jsonify({'download_url': f'/download_file/{video_id}'})
+            except Exception as e:
+                return {'url': url, 'status': 'error', 'message': str(e)}
 
-    except Exception as e:
-        return jsonify({'error': f'Error downloading video: {str(e)}'}), 500
+    futures = [executor.submit(download_video, u) for u in valid_urls]
+    results = [f.result() for f in futures]
+
+    return jsonify({'results': results})
 
 @app.route('/download_file/<video_id>')
 def download_file(video_id):
