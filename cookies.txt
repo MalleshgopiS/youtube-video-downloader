@@ -1,0 +1,2 @@
+.youtube.com	TRUE	/	FALSE	1699999999	VISITOR_INFO1_LIVE	xxxxxxxxx
+.youtube.com	TRUE	/	FALSE	1699999999	YSC	yyyyyyyyy

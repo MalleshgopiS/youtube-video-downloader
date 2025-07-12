@@ -6,3 +6,4 @@ git+https://github.com/pytube/pytube.git
 requests>=2.31.0
 ffmpeg-python>=0.2.0
 gunicorn
+browser-cookie3
