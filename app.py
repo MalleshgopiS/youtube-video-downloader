@@ -5,16 +5,16 @@ import uuid
 import os
 from io import BytesIO
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
+executor = ThreadPoolExecutor(max_workers=10)
 
 YTDL_OPTS_BASE = {
     'quiet': True,
     'no_warnings': True,
     'skip_download': True,
     'restrictfilenames': True,
-    'forcejson': True,
-    'simulate': True,
     'format': 'bestvideo*+bestaudio/best'
 }
 
@@ -52,12 +52,18 @@ def get_formats():
             vcodec = f.get('vcodec', 'none')
             acodec = f.get('acodec', 'none')
 
+            size_bytes = f.get('filesize') or f.get('filesize_approx')
+            if not size_bytes:
+                continue  # skip formats with unknown size
+
+            size_mb = f"{size_bytes / (1024 * 1024):.1f} MB"
+
             if vcodec != 'none' and acodec != 'none':
-                label = f"{f.get('height', 'unknown')}p (video + audio)"
+                label = f"{f.get('height', 'unknown')}p (video + audio) - {size_mb}"
             elif vcodec != 'none':
-                label = f"{f.get('height', 'unknown')}p "
+                label = f"{f.get('height', 'unknown')}p - {size_mb}"
             elif acodec != 'none':
-                label = f"{f.get('abr', 'unknown')}kbps (audio only)"
+                label = f"{f.get('abr', 'unknown')}kbps (audio only) - {size_mb}"
             else:
                 continue
 
@@ -72,11 +78,18 @@ def get_formats():
                 'label': label,
             })
 
+        # Sort formats from highest to lowest quality based on numeric value in label (e.g., 1080p, 720p, etc.)
         formats.sort(key=lambda f: int(re.findall(r'\d+', f['label'])[0]) if re.findall(r'\d+', f['label']) else 0, reverse=True)
+
         return jsonify({'formats': formats})
 
     except Exception as e:
-        return jsonify({'error': f'Failed to retrieve formats: {str(e)}'}), 500
+        error_message = str(e)
+        if "Sign in to confirm you're not a bot" in error_message:
+            return jsonify({
+                'error': 'This video requires sign-in. Try a public video or use authentication cookies.'
+            }), 403
+        return jsonify({'error': f'Failed to retrieve formats: {error_message}'}), 500
 
 @app.route('/download', methods=['POST'])
 def download_video():
@@ -89,7 +102,7 @@ def download_video():
     if not format_id:
         return jsonify({'error': 'Missing format_id'}), 400
 
-    try:
+    def download_task(url, format_id):
         with tempfile.TemporaryDirectory() as temp_dir:
             ydl_opts = {
                 'format': f'{format_id}+bestaudio/best',
@@ -110,12 +123,23 @@ def download_video():
 
             clean_filename = os.path.basename(filename)
             video_id = str(uuid.uuid4())
-            app.config.setdefault('videos', {})[video_id] = (buffer, clean_filename)
+            return video_id, buffer, clean_filename
 
-            return jsonify({'download_url': f'/download_file/{video_id}'})
+    try:
+        future = executor.submit(download_task, url, format_id)
+        video_id, buffer, clean_filename = future.result()
+
+        app.config.setdefault('videos', {})[video_id] = (buffer, clean_filename)
+
+        return jsonify({'download_url': f'/download_file/{video_id}'})
 
     except Exception as e:
-        return jsonify({'error': f'Error downloading video: {str(e)}'}), 500
+        error_message = str(e)
+        if "Sign in to confirm you're not a bot" in error_message:
+            return jsonify({
+                'error': 'This video requires login. Please try a different video or provide authentication cookies.'
+            }), 403
+        return jsonify({'error': f'Error downloading video: {error_message}'}), 500
 
 @app.route('/download_file/<video_id>')
 def download_file(video_id):
@@ -127,5 +151,4 @@ def download_file(video_id):
     return send_file(buffer, as_attachment=True, download_name=filename, mimetype='video/mp4')
 
 if __name__ == '__main__':
-    app.run(debug=True)
-
+    app.run(debug=True, threaded=True)
