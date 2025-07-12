@@ -10,15 +10,13 @@ from concurrent.futures import ThreadPoolExecutor
 app = Flask(__name__)
 executor = ThreadPoolExecutor(max_workers=10)
 
-COOKIES_FILE = 'cookies.txt'  # Ensure this file exists in your project directory
-
 YTDL_OPTS_BASE = {
     'quiet': True,
     'no_warnings': True,
     'skip_download': True,
     'restrictfilenames': True,
     'format': 'bestvideo*+bestaudio/best',
-    'cookies': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None
+    'cookiesfrombrowser': ('chrome',)  # Automatically extract cookies from Chrome
 }
 
 def is_valid_youtube_url(url):
@@ -90,7 +88,7 @@ def get_formats():
         error_message = str(e)
         if "Sign in to confirm you're not a bot" in error_message:
             return jsonify({
-                'error': 'This video requires sign-in. Please export and provide cookies.txt to authenticate.'
+                'error': 'This video requires sign-in. Ensure you are logged into Chrome.'
             }), 403
         return jsonify({'error': f'Failed to retrieve formats: {error_message}'}), 500
 
@@ -114,7 +112,7 @@ def download_video():
                 'no_warnings': True,
                 'restrictfilenames': True,
                 'merge_output_format': 'mp4',
-                'cookies': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None
+                'cookiesfrombrowser': ('chrome',)  # Automatically use Chrome cookies
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -141,7 +139,7 @@ def download_video():
         error_message = str(e)
         if "Sign in to confirm you're not a bot" in error_message:
             return jsonify({
-                'error': 'This video requires login. Please provide authentication cookies.'
+                'error': 'This video requires login. Please make sure you are logged into YouTube in Chrome.'
             }), 403
         return jsonify({'error': f'Error downloading video: {error_message}'}), 500
 
