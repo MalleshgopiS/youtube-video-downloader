@@ -17,7 +17,7 @@ YTDL_OPTS_BASE = {
     'skip_download': True,
     'restrictfilenames': True,
     'format': 'bestvideo*+bestaudio/best',
-    'cookies': 'cookies.txt'  # Make sure this file is present in your project root
+    'cookies': 'cookies.txt'  # Ensure this file is present in your project root
 }
 
 def is_valid_youtube_url(url):
@@ -107,7 +107,7 @@ def download_video():
                 'no_warnings': True,
                 'restrictfilenames': True,
                 'merge_output_format': 'mp4',
-                'cookies': 'cookies.txt'  # Use the same cookie file here
+                'cookies': 'cookies.txt'  # Same cookie file used here
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
