@@ -10,15 +10,13 @@ from concurrent.futures import ThreadPoolExecutor
 app = Flask(__name__)
 executor = ThreadPoolExecutor(max_workers=10)
 
-COOKIES_FILE = 'cookies.txt'
-
 YTDL_OPTS_BASE = {
     'quiet': True,
     'no_warnings': True,
     'skip_download': True,
     'restrictfilenames': True,
     'format': 'bestvideo*+bestaudio/best',
-    'cookies': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None
+    'cookiesfrombrowser': ('chrome',)  # Automatically extract cookies from Chrome
 }
 
 def is_valid_youtube_url(url):
@@ -39,9 +37,6 @@ def get_formats():
 
     try:
         ydl_opts = YTDL_OPTS_BASE.copy()
-        if not ydl_opts.get('cookies'):
-            return jsonify({'error': 'cookies.txt not found. Please upload a valid cookies.txt file.'}), 403
-
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
@@ -93,7 +88,7 @@ def get_formats():
         error_message = str(e)
         if "Sign in to confirm you're not a bot" in error_message:
             return jsonify({
-                'error': 'This video requires sign-in. Ensure cookies.txt is valid and up to date.'
+                'error': 'This video requires sign-in. Ensure you are logged into Chrome.'
             }), 403
         return jsonify({'error': f'Failed to retrieve formats: {error_message}'}), 500
 
@@ -117,11 +112,8 @@ def download_video():
                 'no_warnings': True,
                 'restrictfilenames': True,
                 'merge_output_format': 'mp4',
-                'cookies': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None
+                'cookiesfrombrowser': ('chrome',)  # Automatically use Chrome cookies
             }
-
-            if not ydl_opts['cookies']:
-                raise FileNotFoundError("cookies.txt not found on server.")
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
@@ -143,13 +135,11 @@ def download_video():
 
         return jsonify({'download_url': f'/download_file/{video_id}'})
 
-    except FileNotFoundError as fnfe:
-        return jsonify({'error': str(fnfe)}), 403
     except Exception as e:
         error_message = str(e)
         if "Sign in to confirm you're not a bot" in error_message:
             return jsonify({
-                'error': 'This video requires login. Please upload a valid cookies.txt file.'
+                'error': 'This video requires login. Please make sure you are logged into YouTube in Chrome.'
             }), 403
         return jsonify({'error': f'Error downloading video: {error_message}'}), 500
 
