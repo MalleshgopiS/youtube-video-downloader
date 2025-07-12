@@ -1,22 +1,15 @@
 from flask import Flask, request, jsonify, send_file, abort, render_template
-import yt_dlp
+import subprocess
 import tempfile
 import uuid
 import os
-from io import BytesIO
 import re
+import json
+from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 executor = ThreadPoolExecutor(max_workers=10)
-
-YTDL_OPTS_BASE = {
-    'quiet': True,
-    'no_warnings': True,
-    'skip_download': True,
-    'restrictfilenames': True,
-    'format': 'bestvideo*+bestaudio/best'
-}
 
 def is_valid_youtube_url(url):
     pattern = re.compile(r'^(https?://)?(www\.)?(m\.)?(youtube\.com|youtu\.be)/.+$')
@@ -25,6 +18,19 @@ def is_valid_youtube_url(url):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+def get_video_info_cli(url):
+    try:
+        result = subprocess.run(
+            ['yt-dlp', '--dump-json', '--no-warnings', '-f', 'bestvideo*+bestaudio/best', url],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+            text=True
+        )
+        return json.loads(result.stdout)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"yt-dlp error: {e.stderr}")
 
 @app.route('/formats', methods=['POST'])
 def get_formats():
@@ -35,8 +41,7 @@ def get_formats():
         return jsonify({'error': 'Invalid or missing YouTube URL'}), 400
 
     try:
-        with yt_dlp.YoutubeDL(YTDL_OPTS_BASE) as ydl:
-            info = ydl.extract_info(url, download=False)
+        info = get_video_info_cli(url)
 
         formats = []
         seen_labels = set()
@@ -54,7 +59,7 @@ def get_formats():
 
             size_bytes = f.get('filesize') or f.get('filesize_approx')
             if not size_bytes:
-                continue  # skip formats with unknown size
+                continue
 
             size_mb = f"{size_bytes / (1024 * 1024):.1f} MB"
 
@@ -78,13 +83,38 @@ def get_formats():
                 'label': label,
             })
 
-        # Sort formats from highest to lowest quality based on numeric value in label (e.g., 1080p, 720p, etc.)
         formats.sort(key=lambda f: int(re.findall(r'\d+', f['label'])[0]) if re.findall(r'\d+', f['label']) else 0, reverse=True)
 
         return jsonify({'formats': formats})
 
     except Exception as e:
         return jsonify({'error': f'Failed to retrieve formats: {str(e)}'}), 500
+
+def download_video_cli(url, format_id, temp_dir):
+    output_template = os.path.join(temp_dir, '%(title)s.%(ext)s')
+
+    cmd = [
+        'yt-dlp',
+        '-f', f'{format_id}+bestaudio/best',
+        '-o', output_template,
+        '--merge-output-format', 'mp4',
+        '--no-warnings',
+        '--quiet',
+        url
+    ]
+
+    try:
+        subprocess.run(cmd, check=True)
+
+        # Get the downloaded file (assumes only one file will be in the temp dir)
+        for filename in os.listdir(temp_dir):
+            if filename.endswith('.mp4'):
+                return os.path.join(temp_dir, filename)
+
+        raise FileNotFoundError("Downloaded file not found in temp dir.")
+
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"yt-dlp download failed: {e.stderr}")
 
 @app.route('/download', methods=['POST'])
 def download_video():
@@ -99,24 +129,13 @@ def download_video():
 
     def download_task(url, format_id):
         with tempfile.TemporaryDirectory() as temp_dir:
-            ydl_opts = {
-                'format': f'{format_id}+bestaudio/best',
-                'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-                'quiet': True,
-                'no_warnings': True,
-                'restrictfilenames': True,
-                'merge_output_format': 'mp4',
-            }
+            file_path = download_video_cli(url, format_id, temp_dir)
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                filename = ydl.prepare_filename(info)
-
-            with open(filename, 'rb') as f:
+            with open(file_path, 'rb') as f:
                 buffer = BytesIO(f.read())
                 buffer.seek(0)
 
-            clean_filename = os.path.basename(filename)
+            clean_filename = os.path.basename(file_path)
             video_id = str(uuid.uuid4())
             return video_id, buffer, clean_filename
 
